@@ -22,7 +22,6 @@ class DatasetParserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             scene_dir = (
                 Path(temp_dir)
-                / "Recordings"
                 / "huaweipura"
                 / "run"
                 / "natlan_r30_run02"
@@ -34,12 +33,14 @@ class DatasetParserTests(unittest.TestCase):
 
             result = scan_scene_folder(scene_dir)
             self.assertEqual(result.experiment_unit.device, "huaweipura")
-            self.assertEqual(result.experiment_unit.label_folder, "run")
-            self.assertEqual(result.experiment_unit.recording_id, "natlan_r30_run02")
-            self.assertEqual(result.experiment_unit.region, "natlan")
-            self.assertEqual(result.experiment_unit.route_id, 30)
-            self.assertEqual(result.experiment_unit.scene_index, 2)
+            self.assertEqual(result.experiment_unit.action_type, "run")
+            self.assertEqual(result.experiment_unit.scene_folder_name, "natlan_r30_run02")
+            self.assertEqual(result.experiment_unit.country, "natlan")
+            self.assertEqual(result.experiment_unit.route_suffix, 30)
+            self.assertEqual(result.experiment_unit.occurrence, 2)
             self.assertEqual(len(result.candidate_map), 2)
+            self.assertEqual(result.candidate_power_prior_manifest["action_type"], "run")
+            self.assertEqual(result.candidate_power_prior_manifest["scene_folder_name"], "natlan_r30_run02")
             self.assertEqual(
                 result.candidate_power_prior_manifest["candidates"][0]["render_config"]["resolution"],
                 "High",
@@ -54,7 +55,6 @@ class DatasetParserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             scene_dir = (
                 Path(temp_dir)
-                / "Recordings"
                 / "huaweipura"
                 / "run"
                 / "natlan_r30_run02"
@@ -69,7 +69,6 @@ class DatasetParserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             scene_dir = (
                 Path(temp_dir)
-                / "Recordings"
                 / "huaweipura"
                 / "run"
                 / "natlan_r30_run02"
@@ -86,7 +85,6 @@ class DatasetParserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             scene_dir = (
                 Path(temp_dir)
-                / "Recordings"
                 / "huaweipura"
                 / "swim"
                 / "natlan_r30_run02"
@@ -96,37 +94,31 @@ class DatasetParserTests(unittest.TestCase):
             with self.assertRaises(SpecError):
                 parse_experiment_unit(scene_dir)
 
-    def test_parse_legacy_recording_dir_still_supported(self) -> None:
+    def test_parse_legacy_recording_dir_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             scene_dir = (
                 Path(temp_dir)
-                / "Recordings"
                 / "huaweipura"
                 / "run"
                 / "natlan_21_h30"
             )
             scene_dir.mkdir(parents=True)
 
-            unit = parse_experiment_unit(scene_dir)
-            self.assertEqual(unit.region, "natlan")
-            self.assertEqual(unit.scene_index, 21)
-            self.assertEqual(unit.route_id, 30)
+            with self.assertRaises(SpecError):
+                parse_experiment_unit(scene_dir)
 
-    def test_parse_transition_recording_dir_still_supported(self) -> None:
+    def test_parse_transition_recording_dir_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             scene_dir = (
                 Path(temp_dir)
-                / "Recordings"
                 / "huaweipura"
                 / "run"
                 / "natlan_r30_s03"
             )
             scene_dir.mkdir(parents=True)
 
-            unit = parse_experiment_unit(scene_dir)
-            self.assertEqual(unit.region, "natlan")
-            self.assertEqual(unit.scene_index, 3)
-            self.assertEqual(unit.route_id, 30)
+            with self.assertRaises(SpecError):
+                parse_experiment_unit(scene_dir)
 
 
 if __name__ == "__main__":

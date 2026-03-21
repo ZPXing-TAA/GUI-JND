@@ -222,7 +222,7 @@ def phase2_candidate_order(resolution: str, fps_star: int) -> list[RenderConfig]
     ]
 
 
-def _phase2_inconsistency_reason(
+def phase2_inconsistency_reason(
     resolution: str,
     fps_star: int,
     candidate_results: list[Phase2CandidateResult],
@@ -240,6 +240,14 @@ def _phase2_inconsistency_reason(
                 "The branch is marked AMBIGUOUS because Version 1 does not support retest."
             )
     return None
+
+
+def phase2_result_has_prior_contradiction(result: Phase2Result) -> bool:
+    return phase2_inconsistency_reason(
+        result.resolution,
+        result.fps_star,
+        result.candidate_results,
+    ) is not None
 
 
 def evaluate_phase2_progress(
@@ -276,15 +284,12 @@ def evaluate_phase2_progress(
 
         return Phase2Decision("need_trial", config=config)
 
-    inconsistency_reason = _phase2_inconsistency_reason(resolution, fps_star, candidate_results)
     return Phase2Decision(
         "complete",
         result=Phase2Result(
             resolution=resolution,
             fps_star=fps_star,
             candidate_results=candidate_results,
-            status="AMBIGUOUS" if inconsistency_reason else "COMPLETE",
-            inconsistency_reason=inconsistency_reason,
         ),
     )
 
@@ -292,8 +297,11 @@ def evaluate_phase2_progress(
 def build_final_safe_set(
     subject_id: str,
     device: str,
-    label_folder: str,
-    recording_id: str,
+    action_type: str,
+    country: str,
+    route_suffix: int,
+    occurrence: int,
+    scene_folder_name: str,
     phase1_results: list[Phase1Result],
     phase2_results: list[Phase2Result],
 ) -> FinalSafeSet:
@@ -303,7 +311,7 @@ def build_final_safe_set(
     for resolution, fps_star in phase2_queue_from_phase1(phase1_results):
         safe_configs.append(RenderConfig(resolution, fps_star, "High", "High"))
         phase2_result = phase2_map.get(resolution)
-        if phase2_result is None or phase2_result.status == "AMBIGUOUS":
+        if phase2_result is None or phase2_result_has_prior_contradiction(phase2_result):
             continue
         for candidate in phase2_result.candidate_results:
             if candidate.status != "SAFE":
@@ -318,8 +326,11 @@ def build_final_safe_set(
     return FinalSafeSet(
         subject_id=subject_id,
         device=device,
-        label_folder=label_folder,
-        recording_id=recording_id,
+        action_type=action_type,
+        country=country,
+        route_suffix=route_suffix,
+        occurrence=occurrence,
+        scene_folder_name=scene_folder_name,
         reference_config=REFERENCE_CONFIG,
         jnd_safe_set=safe_configs,
         estimated_lowest_power_safe_config=estimated_config,
@@ -344,8 +355,6 @@ def deterministic_presentation_order(rng_seed: int, trial_index: int) -> str:
 
 
 def validate_phase2_result(result: Phase2Result) -> None:
-    if result.status not in {"COMPLETE", "AMBIGUOUS"}:
-        raise SpecError(f"Invalid Phase 2 result status '{result.status}'.")
     for candidate_result in result.candidate_results:
         if candidate_result.status not in PHASE2_STATUSES:
             raise SpecError(f"Invalid Phase 2 status '{candidate_result.status}'.")

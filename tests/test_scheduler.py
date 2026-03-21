@@ -9,6 +9,7 @@ from jnd_gui.scheduler import (
     build_final_safe_set,
     evaluate_phase1_history,
     evaluate_phase2_progress,
+    phase2_result_has_prior_contradiction,
     phase2_queue_from_phase1,
     select_training_configs,
 )
@@ -27,8 +28,11 @@ def make_trial(
         trial_index=1,
         subject_id="S01",
         device="device",
-        label_folder="action",
-        recording_id="natlan_1_h1",
+        action_type="run",
+        country="natlan",
+        route_suffix=30,
+        occurrence=2,
+        scene_folder_name="natlan_r30_run02",
         phase=phase,
         candidate_config=config,
         reference_config=RenderConfig("VeryHigh", 60, "High", "High"),
@@ -93,7 +97,6 @@ class SchedulerTests(unittest.TestCase):
     def test_phase2_marks_missing_assets_without_trial(self) -> None:
         decision = evaluate_phase2_progress("High", 45, {}, [])
         self.assertEqual(decision.kind, "complete")
-        self.assertEqual(decision.result.status, "COMPLETE")
         self.assertEqual(
             [result.status for result in decision.result.candidate_results],
             ["MISSING_ASSET", "MISSING_ASSET", "MISSING_ASSET"],
@@ -114,8 +117,7 @@ class SchedulerTests(unittest.TestCase):
         decision = evaluate_phase2_progress("High", 45, candidate_map, history)
 
         self.assertEqual(decision.kind, "complete")
-        self.assertEqual(decision.result.status, "AMBIGUOUS")
-        self.assertIn("Relative power prior contradiction", decision.result.inconsistency_reason)
+        self.assertTrue(phase2_result_has_prior_contradiction(decision.result))
 
     def test_training_configs_follow_power_prior_order(self) -> None:
         candidate_map = {
@@ -141,25 +143,27 @@ class SchedulerTests(unittest.TestCase):
                 resolution="VeryHigh",
                 fps_star=45,
                 candidate_results=[
-                    type("Candidate", (), {"effect": "Low", "shadow": "Low", "status": "SAFE"})(),
+                    type("Candidate", (), {"effect": "Low", "shadow": "Low", "status": "NOT_SAFE"})(),
                     type("Candidate", (), {"effect": "Low", "shadow": "High", "status": "SAFE"})(),
-                    type("Candidate", (), {"effect": "High", "shadow": "Low", "status": "NOT_SAFE"})(),
+                    type("Candidate", (), {"effect": "High", "shadow": "Low", "status": "SAFE"})(),
                 ],
-                status="COMPLETE",
             )
         ]
         safe_set = build_final_safe_set(
             subject_id="S01",
             device="device",
-            label_folder="action",
-            recording_id="natlan_1_h1",
+            action_type="run",
+            country="natlan",
+            route_suffix=30,
+            occurrence=2,
+            scene_folder_name="natlan_r30_run02",
             phase1_results=phase1_results,
             phase2_results=phase2_results,
         )
         self.assertEqual(len(safe_set.jnd_safe_set), 3)
         self.assertEqual(
             safe_set.estimated_lowest_power_safe_config,
-            RenderConfig("VeryHigh", 45, "Low", "Low"),
+            RenderConfig("VeryHigh", 45, "Low", "High"),
         )
         self.assertEqual(safe_set.estimated_lowest_power_safe_config_source, "relative_power_prior")
         queue = phase2_queue_from_phase1(phase1_results)
@@ -169,8 +173,11 @@ class SchedulerTests(unittest.TestCase):
         safe_set = build_final_safe_set(
             subject_id="S01",
             device="device",
-            label_folder="action",
-            recording_id="natlan_1_h1",
+            action_type="run",
+            country="natlan",
+            route_suffix=30,
+            occurrence=2,
+            scene_folder_name="natlan_r30_run02",
             phase1_results=[Phase1Result("High", 45, "FOUND")],
             phase2_results=[
                 Phase2Result(
@@ -181,8 +188,6 @@ class SchedulerTests(unittest.TestCase):
                         type("Candidate", (), {"effect": "Low", "shadow": "High", "status": "NOT_SAFE"})(),
                         type("Candidate", (), {"effect": "High", "shadow": "Low", "status": "NOT_SAFE"})(),
                     ],
-                    status="AMBIGUOUS",
-                    inconsistency_reason="test",
                 )
             ],
         )

@@ -9,50 +9,30 @@ from jnd_gui.models import ExperimentUnit, RenderConfig, SceneScanResult
 from jnd_gui.power_prior import build_candidate_power_prior_manifest
 
 
-LEGACY_SCENE_PATTERN = re.compile(r"^(?P<country>[a-z]+)_(?P<global_action_index>\d+)_h(?P<route_suffix>\d+)$")
-TRANSITION_SCENE_PATTERN = re.compile(
-    r"^(?P<country>[a-z]+)_r(?P<route_suffix>\d{2})_s(?P<segment_index>\d{2})$"
-)
 CURRENT_SCENE_PATTERN = re.compile(
     r"^(?P<country>[a-z]+)_r(?P<route_suffix>\d{2})_(?P<label>[a-z_]+)(?P<occurrence>\d{2})$"
 )
 
 
-def parse_scene_id(scene_id: str, label_folder: str) -> tuple[str, int, int]:
-    legacy_match = LEGACY_SCENE_PATTERN.fullmatch(scene_id)
-    if legacy_match:
-        return (
-            legacy_match.group("country"),
-            int(legacy_match.group("global_action_index")),
-            int(legacy_match.group("route_suffix")),
+def parse_scene_folder_name(scene_folder_name: str, action_type: str) -> tuple[str, int, int]:
+    current_match = CURRENT_SCENE_PATTERN.fullmatch(scene_folder_name)
+    if current_match is None:
+        raise SpecError(
+            "Unsupported scene folder format "
+            f"'{scene_folder_name}'. Expected migrated final format <country>_rRR_<label>NN only."
         )
 
-    transition_match = TRANSITION_SCENE_PATTERN.fullmatch(scene_id)
-    if transition_match:
-        return (
-            transition_match.group("country"),
-            int(transition_match.group("segment_index")),
-            int(transition_match.group("route_suffix")),
+    parsed_label = current_match.group("label")
+    if parsed_label != action_type:
+        raise SpecError(
+            "Invalid scene folder: parent action_type does not match the label encoded in the scene folder name "
+            f"('{action_type}' != '{parsed_label}')."
         )
 
-    current_match = CURRENT_SCENE_PATTERN.fullmatch(scene_id)
-    if current_match:
-        parsed_label = current_match.group("label")
-        if parsed_label != label_folder:
-            raise SpecError(
-                "Invalid scene folder: label folder does not match the label encoded in the recording directory "
-                f"('{label_folder}' != '{parsed_label}')."
-            )
-        return (
-            current_match.group("country"),
-            int(current_match.group("occurrence")),
-            int(current_match.group("route_suffix")),
-        )
-
-    raise SpecError(
-        "Invalid scene directory name "
-        f"'{scene_id}'. Expected one of: <country>_<global_action_index>_h<route>, "
-        "<country>_rRR_sSS, or <country>_rRR_<label>NN."
+    return (
+        current_match.group("country"),
+        int(current_match.group("route_suffix")),
+        int(current_match.group("occurrence")),
     )
 
 
@@ -61,26 +41,20 @@ def parse_experiment_unit(scene_folder: str | Path) -> ExperimentUnit:
     if not folder.exists() or not folder.is_dir():
         raise SpecError(f"Scene folder does not exist or is not a directory: {folder}")
 
-    parts = folder.parts
-    if "Recordings" not in parts:
+    if len(folder.parts) < 3:
         raise SpecError(
-            f"Invalid scene folder: {folder}. Expected a path ending in Recordings/{{device}}/{{label_folder}}/{{recording_dir}}."
+            f"Invalid scene folder: {folder}. Expected a path ending in {{device}}/{{action_type}}/{{scene_folder_name}}."
         )
-    recordings_index = max(index for index, part in enumerate(parts) if part == "Recordings")
-    tail = parts[recordings_index + 1 :]
-    if len(tail) != 3:
-        raise SpecError(
-            f"Invalid scene folder: {folder}. Expected exactly three path parts after Recordings."
-        )
-    device, label_folder, recording_id = tail
-    region, scene_index, route_id = parse_scene_id(recording_id, label_folder)
+
+    device, action_type, scene_folder_name = folder.parts[-3:]
+    country, route_suffix, occurrence = parse_scene_folder_name(scene_folder_name, action_type)
     return ExperimentUnit(
         device=device,
-        label_folder=label_folder,
-        recording_id=recording_id,
-        region=region,
-        scene_index=scene_index,
-        route_id=route_id,
+        action_type=action_type,
+        country=country,
+        route_suffix=route_suffix,
+        occurrence=occurrence,
+        scene_folder_name=scene_folder_name,
         scene_folder=folder,
     )
 

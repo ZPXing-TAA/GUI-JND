@@ -39,31 +39,41 @@ class RenderConfig:
 @dataclass(frozen=True)
 class ExperimentUnit:
     device: str
-    label_folder: str
-    recording_id: str
-    region: str
-    scene_index: int
-    route_id: int
+    action_type: str
+    country: str
+    route_suffix: int
+    occurrence: int
+    scene_folder_name: str
     scene_folder: Path
 
     @property
-    def action_type(self) -> str:
-        return self.label_folder
+    def label_folder(self) -> str:
+        return self.action_type
 
     @property
-    def scene_id(self) -> str:
-        return self.recording_id
+    def recording_id(self) -> str:
+        return self.scene_folder_name
+
+    @property
+    def region(self) -> str:
+        return self.country
+
+    @property
+    def scene_index(self) -> int:
+        return self.occurrence
+
+    @property
+    def route_id(self) -> int:
+        return self.route_suffix
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "device": self.device,
-            "label_folder": self.label_folder,
-            "recording_id": self.recording_id,
-            "action_type": self.label_folder,
-            "scene_id": self.recording_id,
-            "region": self.region,
-            "scene_index": self.scene_index,
-            "route_id": self.route_id,
+            "action_type": self.action_type,
+            "country": self.country,
+            "route_suffix": self.route_suffix,
+            "occurrence": self.occurrence,
+            "scene_folder_name": self.scene_folder_name,
             "scene_folder": str(self.scene_folder),
         }
 
@@ -73,8 +83,11 @@ class TrialRecord:
     trial_index: int
     subject_id: str
     device: str
-    label_folder: str
-    recording_id: str
+    action_type: str
+    country: str
+    route_suffix: int
+    occurrence: int
+    scene_folder_name: str
     phase: str
     candidate_config: RenderConfig
     reference_config: RenderConfig
@@ -86,22 +99,23 @@ class TrialRecord:
     timestamp: str
 
     @property
-    def action_type(self) -> str:
-        return self.label_folder
+    def label_folder(self) -> str:
+        return self.action_type
 
     @property
-    def scene_id(self) -> str:
-        return self.recording_id
+    def recording_id(self) -> str:
+        return self.scene_folder_name
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "trial_index": self.trial_index,
             "subject_id": self.subject_id,
             "device": self.device,
-            "label_folder": self.label_folder,
-            "recording_id": self.recording_id,
-            "action_type": self.label_folder,
-            "scene_id": self.recording_id,
+            "action_type": self.action_type,
+            "country": self.country,
+            "route_suffix": self.route_suffix,
+            "occurrence": self.occurrence,
+            "scene_folder_name": self.scene_folder_name,
             "phase": self.phase,
             "candidate_config": self.candidate_config.to_dict(),
             "reference_config": self.reference_config.to_dict(),
@@ -115,12 +129,24 @@ class TrialRecord:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "TrialRecord":
+        action_type = payload.get("action_type", payload.get("label_folder"))
+        scene_folder_name = payload.get("scene_folder_name", payload.get("recording_id", payload.get("scene_id")))
+        country = payload.get("country", payload.get("region"))
+        route_suffix = payload.get("route_suffix", payload.get("route_id"))
+        occurrence = payload.get("occurrence", payload.get("scene_index"))
+        if action_type is None or scene_folder_name is None or country is None:
+            raise KeyError("TrialRecord payload missing required experiment-unit fields.")
+        if route_suffix is None or occurrence is None:
+            raise KeyError("TrialRecord payload missing required route/occurrence fields.")
         return cls(
             trial_index=int(payload["trial_index"]),
             subject_id=str(payload["subject_id"]),
             device=str(payload["device"]),
-            label_folder=str(payload.get("label_folder", payload["action_type"])),
-            recording_id=str(payload.get("recording_id", payload["scene_id"])),
+            action_type=str(action_type),
+            country=str(country),
+            route_suffix=int(route_suffix),
+            occurrence=int(occurrence),
+            scene_folder_name=str(scene_folder_name),
             phase=str(payload["phase"]),
             candidate_config=RenderConfig.from_dict(payload["candidate_config"]),
             reference_config=RenderConfig.from_dict(payload["reference_config"]),
@@ -179,16 +205,12 @@ class Phase2Result:
     resolution: str
     fps_star: int
     candidate_results: list[Phase2CandidateResult]
-    status: str = "COMPLETE"
-    inconsistency_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "resolution": self.resolution,
             "fps_star": self.fps_star,
             "candidate_results": [result.to_dict() for result in self.candidate_results],
-            "status": self.status,
-            "inconsistency_reason": self.inconsistency_reason,
         }
 
     @classmethod
@@ -200,8 +222,6 @@ class Phase2Result:
                 Phase2CandidateResult.from_dict(entry)
                 for entry in payload.get("candidate_results", [])
             ],
-            status=str(payload.get("status", "COMPLETE")),
-            inconsistency_reason=payload.get("inconsistency_reason"),
         )
 
 
@@ -209,8 +229,11 @@ class Phase2Result:
 class SessionMeta:
     subject_id: str
     device: str
-    label_folder: str
-    recording_id: str
+    action_type: str
+    country: str
+    route_suffix: int
+    occurrence: int
+    scene_folder_name: str
     scene_folder: Path
     reference_config: RenderConfig
     reference_path: Path
@@ -218,21 +241,22 @@ class SessionMeta:
     app_spec_version: str
 
     @property
-    def action_type(self) -> str:
-        return self.label_folder
+    def label_folder(self) -> str:
+        return self.action_type
 
     @property
-    def scene_id(self) -> str:
-        return self.recording_id
+    def recording_id(self) -> str:
+        return self.scene_folder_name
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "subject_id": self.subject_id,
             "device": self.device,
-            "label_folder": self.label_folder,
-            "recording_id": self.recording_id,
-            "action_type": self.label_folder,
-            "scene_id": self.recording_id,
+            "action_type": self.action_type,
+            "country": self.country,
+            "route_suffix": self.route_suffix,
+            "occurrence": self.occurrence,
+            "scene_folder_name": self.scene_folder_name,
             "scene_folder": str(self.scene_folder),
             "reference_config": self.reference_config.to_dict(),
             "reference_path": str(self.reference_path),
@@ -242,11 +266,23 @@ class SessionMeta:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "SessionMeta":
+        action_type = payload.get("action_type", payload.get("label_folder"))
+        scene_folder_name = payload.get("scene_folder_name", payload.get("recording_id", payload.get("scene_id")))
+        country = payload.get("country", payload.get("region"))
+        route_suffix = payload.get("route_suffix", payload.get("route_id"))
+        occurrence = payload.get("occurrence", payload.get("scene_index"))
+        if action_type is None or scene_folder_name is None or country is None:
+            raise KeyError("SessionMeta payload missing required experiment-unit fields.")
+        if route_suffix is None or occurrence is None:
+            raise KeyError("SessionMeta payload missing required route/occurrence fields.")
         return cls(
             subject_id=str(payload["subject_id"]),
             device=str(payload["device"]),
-            label_folder=str(payload.get("label_folder", payload["action_type"])),
-            recording_id=str(payload.get("recording_id", payload["scene_id"])),
+            action_type=str(action_type),
+            country=str(country),
+            route_suffix=int(route_suffix),
+            occurrence=int(occurrence),
+            scene_folder_name=str(scene_folder_name),
             scene_folder=Path(str(payload["scene_folder"])),
             reference_config=RenderConfig.from_dict(payload["reference_config"]),
             reference_path=Path(str(payload["reference_path"])),
@@ -303,8 +339,11 @@ class SessionState:
 class FinalSafeSet:
     subject_id: str
     device: str
-    label_folder: str
-    recording_id: str
+    action_type: str
+    country: str
+    route_suffix: int
+    occurrence: int
+    scene_folder_name: str
     reference_config: RenderConfig
     jnd_safe_set: list[RenderConfig]
     estimated_lowest_power_safe_config: RenderConfig | None
@@ -312,21 +351,22 @@ class FinalSafeSet:
     generated_at: str
 
     @property
-    def action_type(self) -> str:
-        return self.label_folder
+    def label_folder(self) -> str:
+        return self.action_type
 
     @property
-    def scene_id(self) -> str:
-        return self.recording_id
+    def recording_id(self) -> str:
+        return self.scene_folder_name
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "subject_id": self.subject_id,
             "device": self.device,
-            "label_folder": self.label_folder,
-            "recording_id": self.recording_id,
-            "action_type": self.label_folder,
-            "scene_id": self.recording_id,
+            "action_type": self.action_type,
+            "country": self.country,
+            "route_suffix": self.route_suffix,
+            "occurrence": self.occurrence,
+            "scene_folder_name": self.scene_folder_name,
             "reference_config": self.reference_config.to_dict(),
             "jnd_safe_set": [config.to_dict() for config in self.jnd_safe_set],
             "estimated_lowest_power_safe_config": (

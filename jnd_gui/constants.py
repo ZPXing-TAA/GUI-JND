@@ -3,7 +3,7 @@ from __future__ import annotations
 from jnd_gui.models import RenderConfig
 
 
-APP_SPEC_VERSION = "1.1"
+APP_SPEC_VERSION = "1.0"
 RESULTS_DIR_NAME = "Results"
 
 RESOLUTION_ORDER = ["VeryHigh", "High", "Medium", "Low", "Lowest"]
@@ -42,4 +42,3 @@ BUTTON_VISIBLE_DIFF = "Visible difference"
 
 PHASE1_STATUSES = {"FOUND", "NOT_FOUND", "MISSING_ASSET", "AMBIGUOUS"}
 PHASE2_STATUSES = {"SAFE", "NOT_SAFE", "MISSING_ASSET"}
-PHASE2_RESULT_STATUSES = {"COMPLETE", "AMBIGUOUS"}

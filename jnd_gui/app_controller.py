@@ -18,6 +18,7 @@ from jnd_gui.scheduler import (
     phase1_transition_counts,
     phase1_trials_for_resolution,
     phase2_queue_from_phase1,
+    phase2_result_has_prior_contradiction,
     phase2_trials_for_resolution,
     select_training_configs,
 )
@@ -53,6 +54,7 @@ class JNDExperimentWindow(QMainWindow):
         self.message_screen.primary_clicked.connect(self._handle_message_primary)
         self.message_screen.secondary_clicked.connect(self._handle_message_secondary)
         self.trial_screen.response_submitted.connect(self._handle_trial_response)
+        self.trial_screen.next_trial_requested.connect(self._handle_next_trial_requested)
         self.trial_screen.playback_error.connect(self._handle_playback_error)
 
         self._pending_primary_action = None
@@ -79,15 +81,18 @@ class JNDExperimentWindow(QMainWindow):
             self.start_screen.show_validation(error_message="Subject ID must be non-empty.")
             return
         if not scene_folder:
-            self.start_screen.show_validation(error_message="Recording folder must be selected.")
+            self.start_screen.show_validation(error_message="Scene folder must be selected.")
             return
 
         try:
             self._scan_result = scan_scene_folder(scene_folder)
             info_lines = [
                 f"Device: {self._scan_result.experiment_unit.device}",
-                f"Label Folder: {self._scan_result.experiment_unit.label_folder}",
-                f"Recording ID: {self._scan_result.experiment_unit.recording_id}",
+                f"Action Type: {self._scan_result.experiment_unit.action_type}",
+                f"Country: {self._scan_result.experiment_unit.country}",
+                f"Route Suffix: {self._scan_result.experiment_unit.route_suffix}",
+                f"Occurrence: {self._scan_result.experiment_unit.occurrence}",
+                f"Scene Folder Name: {self._scan_result.experiment_unit.scene_folder_name}",
                 f"Valid candidate videos found: {len(self._scan_result.candidate_map)}",
             ]
             self.start_screen.show_validation(
@@ -106,17 +111,21 @@ class JNDExperimentWindow(QMainWindow):
                     )
                 if existing_bundle.meta.scene_folder.resolve() != self._scan_result.experiment_unit.scene_folder.resolve():
                     raise SpecError(
-                        "The selected recording folder does not match the original session folder. Refusing to guess which dataset to resume."
+                        "The selected scene folder does not match the original session folder. Refusing to guess which dataset to resume."
                     )
                 self._bundle = existing_bundle
                 self._show_resume_screen()
                 return
 
+            training_already_completed = self.store.has_subject_completed_training(subject_id)
             self._training_configs = select_training_configs(self._scan_result.candidate_map)
             rng_seed = random.SystemRandom().randint(1, 2**31 - 1)
             self._bundle = self.store.create_new_session(subject_id, self._scan_result, rng_seed)
             self._training_index = 0
-            self._show_training_intro()
+            if training_already_completed:
+                self._show_training_skipped_intro()
+            else:
+                self._show_training_intro()
         except SpecError as exc:
             self.start_screen.show_validation(error_message=str(exc))
             self._scan_result = None
@@ -132,10 +141,9 @@ class JNDExperimentWindow(QMainWindow):
         assert self._bundle is not None
         details = [
             f"Subject ID: {self._bundle.meta.subject_id}",
-            f"Recording ID: {self._bundle.meta.recording_id}",
-            f"Label Folder: {self._bundle.meta.label_folder}",
+            f"Scene Folder Name: {self._bundle.meta.scene_folder_name}",
+            f"Action Type: {self._bundle.meta.action_type}",
             f"Current phase: {self._bundle.state.current_phase}",
-            f"Current resolution: {self._bundle.state.current_resolution or '-'}",
             f"Last update time: {self._bundle.state.updated_at}",
         ]
         self.resume_screen.set_details(details)
@@ -155,9 +163,12 @@ class JNDExperimentWindow(QMainWindow):
                 self.store.write_session_state(self._bundle.session_dir, self._bundle.state)
 
             if not self._bundle.raw_trials and not self._bundle.phase1_results and self._bundle.state.current_phase == TRAINING:
-                self._training_configs = select_training_configs(self._scan_result.candidate_map)
-                self._training_index = 0
-                self._show_training_intro()
+                if self.store.has_subject_completed_training(self._bundle.meta.subject_id):
+                    self._show_training_skipped_intro()
+                else:
+                    self._training_configs = select_training_configs(self._scan_result.candidate_map)
+                    self._training_index = 0
+                    self._show_training_intro()
                 return
             if not self._bundle.raw_trials and not self._bundle.phase1_results and self._bundle.state.current_screen in {
                 "training_complete",
@@ -183,10 +194,13 @@ class JNDExperimentWindow(QMainWindow):
         unit = self._scan_result.experiment_unit
         if (
             self._bundle.meta.device != unit.device
-            or self._bundle.meta.label_folder != unit.label_folder
-            or self._bundle.meta.recording_id != unit.recording_id
+            or self._bundle.meta.action_type != unit.action_type
+            or self._bundle.meta.country != unit.country
+            or self._bundle.meta.route_suffix != unit.route_suffix
+            or self._bundle.meta.occurrence != unit.occurrence
+            or self._bundle.meta.scene_folder_name != unit.scene_folder_name
         ):
-            raise SpecError("The selected recording folder does not match the experiment unit stored in session_meta.json.")
+            raise SpecError("The selected scene folder does not match the experiment unit stored in session_meta.json.")
         if self._bundle.meta.reference_path.resolve() != self._scan_result.reference_path.resolve():
             raise SpecError(
                 "The current reference video path does not match the path stored in session_meta.json. Refusing to mix assets across resume."
@@ -210,11 +224,26 @@ class JNDExperimentWindow(QMainWindow):
             primary_action=self._begin_training,
         )
 
+    def _show_training_skipped_intro(self) -> None:
+        assert self._bundle is not None
+        self._update_state(current_screen="formal_intro", current_phase="phase1", current_resolution=None)
+        self._show_message(
+            title="Formal Experiment",
+            body_lines=[
+                "Training was already completed for this participant.",
+                "Formal experiment is about to start.",
+                "Judge visible difference only.",
+            ],
+            detail_lines=[],
+            primary_label="Start Phase 1",
+            primary_action=self._advance_formal_flow,
+        )
+
     def _begin_training(self) -> None:
         self._training_index = 0
         self._show_training_trial()
 
-    def _show_training_trial(self) -> None:
+    def _show_training_trial(self, auto_start: bool = False) -> None:
         assert self._scan_result is not None
         assert self._bundle is not None
         if not self._training_configs:
@@ -234,10 +263,12 @@ class JNDExperimentWindow(QMainWindow):
         )
         self._update_state(current_screen="training_trial", current_phase=TRAINING, current_resolution=None)
         self.trial_screen.start_trial(
+            phase_text="Training",
             progress_text=self._active_trial.progress_label,
             reference_path=self._active_trial.reference_path,
             candidate_path=self._active_trial.candidate_path,
             presentation_order=self._active_trial.presentation_order,
+            auto_start=auto_start,
         )
         self.stack.setCurrentWidget(self.trial_screen)
 
@@ -270,7 +301,7 @@ class JNDExperimentWindow(QMainWindow):
             primary_action=self._advance_formal_flow,
         )
 
-    def _advance_formal_flow(self) -> None:
+    def _advance_formal_flow(self, auto_start_trial: bool = False) -> None:
         assert self._bundle is not None
         assert self._scan_result is not None
 
@@ -299,7 +330,7 @@ class JNDExperimentWindow(QMainWindow):
                             )
                         )
                         continue
-                    self._start_formal_trial(PHASE1, next_phase1_resolution, decision.config)
+                    self._start_formal_trial(PHASE1, next_phase1_resolution, decision.config, auto_start=auto_start_trial)
                     return
 
                 phase2_queue = phase2_queue_from_phase1(self._bundle.phase1_results)
@@ -335,7 +366,7 @@ class JNDExperimentWindow(QMainWindow):
                 if decision.kind == "complete":
                     self._record_phase2_result(decision.result)
                     continue
-                self._start_formal_trial(PHASE2, resolution, decision.config)
+                self._start_formal_trial(PHASE2, resolution, decision.config, auto_start=auto_start_trial)
                 return
         except SpecError as exc:
             self._show_fatal_error(str(exc), "Inspect the current session files before continuing.")
@@ -411,7 +442,7 @@ class JNDExperimentWindow(QMainWindow):
         self._phase2_transition_acknowledged = True
         self._advance_formal_flow()
 
-    def _start_formal_trial(self, phase: str, resolution: str, candidate_config) -> None:
+    def _start_formal_trial(self, phase: str, resolution: str, candidate_config, auto_start: bool = False) -> None:
         assert self._bundle is not None
         assert self._scan_result is not None
         trial_index = self._bundle.state.next_trial_index
@@ -433,10 +464,12 @@ class JNDExperimentWindow(QMainWindow):
         )
         self._update_state(current_screen="trial", current_phase=phase, current_resolution=resolution)
         self.trial_screen.start_trial(
+            phase_text="Phase 1" if phase == PHASE1 else "Phase 2",
             progress_text=self._active_trial.progress_label,
             reference_path=self._active_trial.reference_path,
             candidate_path=self._active_trial.candidate_path,
             presentation_order=self._active_trial.presentation_order,
+            auto_start=auto_start,
         )
         self.stack.setCurrentWidget(self.trial_screen)
 
@@ -444,12 +477,7 @@ class JNDExperimentWindow(QMainWindow):
         if self._active_trial is None:
             return
         if self._active_trial.phase == TRAINING:
-            self._training_index += 1
-            if self._training_index < len(self._training_configs):
-                self._show_training_trial()
-            else:
-                self._active_trial = None
-                self._show_training_complete_transition()
+            self.trial_screen.show_post_response_ready()
             return
 
         assert self._bundle is not None
@@ -458,8 +486,11 @@ class JNDExperimentWindow(QMainWindow):
             trial_index=trial.formal_trial_index or self._bundle.state.next_trial_index,
             subject_id=self._bundle.meta.subject_id,
             device=self._bundle.meta.device,
-            label_folder=self._bundle.meta.label_folder,
-            recording_id=self._bundle.meta.recording_id,
+            action_type=self._bundle.meta.action_type,
+            country=self._bundle.meta.country,
+            route_suffix=self._bundle.meta.route_suffix,
+            occurrence=self._bundle.meta.occurrence,
+            scene_folder_name=self._bundle.meta.scene_folder_name,
             phase=trial.phase,
             candidate_config=trial.candidate_config,
             reference_config=REFERENCE_CONFIG,
@@ -476,13 +507,41 @@ class JNDExperimentWindow(QMainWindow):
             self._bundle.raw_trials.append(record)
             self._bundle.state.next_trial_index = record.trial_index + 1
             self.store.write_session_state(self._bundle.session_dir, self._bundle.state)
-            self._active_trial = None
-            self._advance_formal_flow()
+            self.trial_screen.show_post_response_ready()
         except (OSError, SpecError) as exc:
             self._show_fatal_error(
                 f"Unable to write formal trial data safely: {exc}",
                 "Check disk permissions and session files before retrying.",
             )
+
+    def _handle_next_trial_requested(self) -> None:
+        if self._active_trial is None:
+            return
+
+        completed_trial = self._active_trial
+        self._active_trial = None
+
+        if completed_trial.phase == TRAINING:
+            self._training_index += 1
+            if self._training_index < len(self._training_configs):
+                self._show_training_trial(auto_start=True)
+            else:
+                assert self._bundle is not None
+                try:
+                    self.store.mark_subject_training_completed(
+                        self._bundle.meta.subject_id,
+                        self._bundle.session_dir,
+                    )
+                except OSError as exc:
+                    self._show_fatal_error(
+                        f"Unable to persist subject training status safely: {exc}",
+                        "Check disk permissions and session files before retrying.",
+                    )
+                    return
+                self._show_training_complete_transition()
+            return
+
+        self._advance_formal_flow(auto_start_trial=True)
 
     def _record_phase1_result(self, result: Phase1Result | None) -> None:
         if result is None:
@@ -514,8 +573,11 @@ class JNDExperimentWindow(QMainWindow):
         final_safe_set = build_final_safe_set(
             subject_id=self._bundle.meta.subject_id,
             device=self._bundle.meta.device,
-            label_folder=self._bundle.meta.label_folder,
-            recording_id=self._bundle.meta.recording_id,
+            action_type=self._bundle.meta.action_type,
+            country=self._bundle.meta.country,
+            route_suffix=self._bundle.meta.route_suffix,
+            occurrence=self._bundle.meta.occurrence,
+            scene_folder_name=self._bundle.meta.scene_folder_name,
             phase1_results=self._bundle.phase1_results,
             phase2_results=self._bundle.phase2_results,
         )
@@ -532,7 +594,7 @@ class JNDExperimentWindow(QMainWindow):
                 f"{format_render_config(final_safe_set.estimated_lowest_power_safe_config)}"
             )
         ambiguous_phase2 = sum(
-            1 for result in self._bundle.phase2_results if result.status == "AMBIGUOUS"
+            1 for result in self._bundle.phase2_results if phase2_result_has_prior_contradiction(result)
         )
         if ambiguous_phase2:
             detail_lines.append(

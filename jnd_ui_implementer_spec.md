@@ -10,6 +10,13 @@ For implementation purposes, this document is the source of truth and overrides 
 
 The goal is to let a new implementer build the full interface and the required experiment flow without needing to resolve design ambiguity on their own.
 
+Implementer reading order:
+
+1. Read this file first for the full GUI and experiment workflow.
+2. Read `/Users/xingzhengpeng/CODEZONE/PCO/GUI for JND/communication/2026-03-21-relative-power-prior-implementer-spec.md` second for the power-prior layer.
+
+Do not treat older docs as competing sources once these two are available.
+
 ---
 
 # 1. Product Goal
@@ -60,6 +67,15 @@ These choices are final for implementation:
 10. The GUI only supports the migrated final scene folder naming format.
 11. The GUI does not support the old or intermediate scene folder formats.
 12. The GUI must not require any ancestor directory to be literally named `Recordings`.
+13. Video clips are shown in full-screen or equivalent immersive playback mode.
+14. The participant controls when to start clip A, when to start clip B, and when to move to the next trial.
+15. The system controls clip completeness:
+   - no pause
+   - no seek
+   - no skip
+   - no replay
+   - no early response before both clips finish
+16. `response_time_ms` is measured from clip B completion to final response submission.
 
 ---
 
@@ -549,6 +565,15 @@ Button:
 
 Use the same layout as formal trials, but do not write to `raw_trials.jsonl`.
 
+Training trials use the same pacing structure as formal trials:
+
+1. participant clicks to start the trial
+2. clip A plays full screen to completion
+3. participant clicks to start clip B
+4. clip B plays full screen to completion
+5. participant submits response
+6. participant clicks to continue
+
 Recommended training count:
 
 - exactly `3` training trials
@@ -589,21 +614,42 @@ Visible elements:
 - progress label
 - video area
 - clip label `A` or `B`
+- trial-stage prompt
 - response buttons
+- stage action button
 
 Playback rules:
 
 1. A and B are shown sequentially.
 2. The order is determined by `presentation_order`.
-3. The participant must not answer until both clips finish.
-4. Response buttons remain disabled during playback.
-5. Response timer starts when the second clip finishes.
-6. After response, the app saves trial data immediately before advancing.
+3. Each clip must play in full-screen or equivalent immersive mode.
+4. The participant clicks to start clip A.
+5. After clip A finishes, the participant clicks to start clip B.
+6. The participant must not answer until both clips finish.
+7. Response buttons remain disabled until clip B finishes.
+8. Response timer starts when clip B finishes.
+9. After response, the app saves trial data immediately.
+10. The next trial does not auto-start; the participant clicks to continue.
+
+Required per-trial state sequence:
+
+1. `TRIAL_READY`
+2. `PLAYING_A`
+3. `INTER_CLIP_READY`
+4. `PLAYING_B`
+5. `RESPONSE_READY`
+6. `POST_RESPONSE_READY`
 
 Response buttons:
 
 - `No noticeable difference`
 - `Visible difference`
+
+Stage action buttons:
+
+- `Start Trial`
+- `Play Next Clip`
+- `Next Trial`
 
 Internal mapping:
 
@@ -617,6 +663,15 @@ Progress label recommendation:
 - show formal trial index
 
 Do not show speculative remaining total because branching makes it dynamic.
+
+Non-negotiable restrictions:
+
+- no pause
+- no seek
+- no skip
+- no replay
+- no early response before both clips finish
+- no participant control over trial order
 
 ## 8.7 Phase Transition Screen
 
@@ -686,16 +741,40 @@ The playback layer must accept:
 Behavior:
 
 1. Build trial labels `A` and `B` from order.
-2. Play clip A to completion.
-3. Play clip B to completion.
-4. Enable response input only after both clips complete.
-5. Return user response and response time.
+2. Wait in a controlled ready state until the participant clicks `Start Trial`.
+3. Enter full-screen or equivalent immersive playback mode for clip A.
+4. Play clip A to completion.
+5. Return to a controlled inter-clip ready state.
+6. Wait until the participant clicks `Play Next Clip`.
+7. Enter full-screen or equivalent immersive playback mode for clip B.
+8. Play clip B to completion.
+9. Return to a controlled response state.
+10. Enable response input only after both clips complete.
+11. Return user response and `response_time_ms`.
+12. After logging the response, show a controlled post-response state with `Next Trial`.
 
 No side-by-side playback.
 
 No per-trial free navigation between unrelated clips.
 
+No participant playback controls once a clip starts:
+
+- no pause
+- no seek
+- no skip
+- no replay
+
 Version 1 does not require replay support.
+
+`response_time_ms` definition:
+
+- elapsed time from clip B completion to participant response submission
+
+Optional pacing telemetry if easy to implement:
+
+- `pre_trial_ready_delay_ms`
+- `inter_clip_delay_ms`
+- `post_response_delay_ms`
 
 ---
 
@@ -972,7 +1051,9 @@ This is a framework-agnostic split. The implementer can adapt names to the chose
 
 - `trial_player`
   - sequential A/B playback
+  - full-screen clip presentation
   - order mapping
+  - ready/inter-clip/post-response stage transitions
   - response timing
 
 - `ui`
@@ -998,14 +1079,20 @@ The implementation is complete when all of the following are true:
 1. User can select a scene folder and enter a subject id.
 2. App validates the folder and finds the reference video.
 3. App can run sequential A/B training trials.
-4. App can run Phase 1 with boundary confirmation.
-5. App can produce `FOUND`, `NOT_FOUND`, `MISSING_ASSET`, and `AMBIGUOUS` correctly.
-6. App can run Phase 2 for `FOUND` resolutions only.
-7. Formal trial logs are appended to `raw_trials.jsonl`.
-8. Intermediate results are written incrementally.
-9. App can resume from `session_state.json`.
-10. App writes `final_jnd_safe_set.json`.
-11. App reaches a clear completion screen with saved output path.
+4. Every clip is shown in full-screen or equivalent immersive playback mode.
+5. The participant must click to start clip A.
+6. The participant must click to start clip B.
+7. The participant cannot respond before clip B completes.
+8. The participant cannot pause, seek, skip, or replay.
+9. The participant must click to move to the next trial after responding.
+10. App can run Phase 1 with boundary confirmation.
+11. App can produce `FOUND`, `NOT_FOUND`, `MISSING_ASSET`, and `AMBIGUOUS` correctly.
+12. App can run Phase 2 for `FOUND` resolutions only.
+13. Formal trial logs are appended to `raw_trials.jsonl`.
+14. Intermediate results are written incrementally.
+15. App can resume from `session_state.json`.
+16. App writes `final_jnd_safe_set.json`.
+17. App reaches a clear completion screen with saved output path.
 
 ---
 

@@ -87,10 +87,11 @@ def build_candidate_power_prior_manifest(
 
     return {
         "device": unit.device,
-        "label_folder": unit.label_folder,
-        "recording_id": unit.recording_id,
-        "action_type": unit.label_folder,
-        "scene_id": unit.recording_id,
+        "action_type": unit.action_type,
+        "country": unit.country,
+        "route_suffix": unit.route_suffix,
+        "occurrence": unit.occurrence,
+        "scene_folder_name": unit.scene_folder_name,
         "reference_config": power_prior_payload(reference_config)["render_config"],
         "candidates": candidates,
     }

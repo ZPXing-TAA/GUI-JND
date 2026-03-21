@@ -12,7 +12,6 @@ from jnd_gui.constants import (
     PHASE1_STATUSES,
     PHASE2,
     PHASE2_STATUSES,
-    PHASE2_RESULT_STATUSES,
     REFERENCE_CONFIG,
     RESOLUTION_ORDER,
     RESULTS_DIR_NAME,
@@ -40,7 +39,16 @@ class SessionStore:
         self.root_dir = (root_dir or (Path.cwd() / RESULTS_DIR_NAME)).resolve()
 
     def session_dir_for(self, subject_id: str, unit: ExperimentUnit) -> Path:
-        return (self.root_dir / subject_id / unit.device / unit.label_folder / unit.recording_id).resolve()
+        return (
+            self.root_dir
+            / subject_id
+            / unit.device
+            / unit.action_type
+            / unit.scene_folder_name
+        ).resolve()
+
+    def subject_training_state_path(self, subject_id: str) -> Path:
+        return (self.root_dir / subject_id / "subject_training_state.json").resolve()
 
     def create_new_session(self, subject_id: str, scan_result: SceneScanResult, rng_seed: int) -> SessionBundle:
         session_dir = self.session_dir_for(subject_id, scan_result.experiment_unit)
@@ -54,8 +62,11 @@ class SessionStore:
         meta = SessionMeta(
             subject_id=subject_id,
             device=scan_result.experiment_unit.device,
-            label_folder=scan_result.experiment_unit.label_folder,
-            recording_id=scan_result.experiment_unit.recording_id,
+            action_type=scan_result.experiment_unit.action_type,
+            country=scan_result.experiment_unit.country,
+            route_suffix=scan_result.experiment_unit.route_suffix,
+            occurrence=scan_result.experiment_unit.occurrence,
+            scene_folder_name=scan_result.experiment_unit.scene_folder_name,
             scene_folder=scan_result.experiment_unit.scene_folder,
             reference_config=REFERENCE_CONFIG,
             reference_path=scan_result.reference_path,
@@ -160,6 +171,37 @@ class SessionStore:
     def write_candidate_power_prior_manifest(self, session_dir: Path, manifest: dict[str, object]) -> None:
         atomic_write_json(self.candidate_power_prior_manifest_path(session_dir), manifest)
 
+    def has_subject_completed_training(self, subject_id: str) -> bool:
+        path = self.subject_training_state_path(subject_id)
+        if not path.exists():
+            return False
+        payload = read_json_file(path)
+        if not isinstance(payload, dict):
+            raise SpecError("subject_training_state.json is corrupted: expected a JSON object.")
+        if str(payload.get("subject_id", "")) != subject_id:
+            raise SpecError("subject_training_state.json is corrupted: subject_id does not match the requested subject.")
+        training_completed = payload.get("training_completed")
+        if not isinstance(training_completed, bool):
+            raise SpecError("subject_training_state.json is corrupted: training_completed must be a boolean.")
+        completed_at = payload.get("completed_at")
+        if training_completed and not isinstance(completed_at, str):
+            raise SpecError("subject_training_state.json is corrupted: completed_at must be a string when training is completed.")
+        source_session_dir = payload.get("source_session_dir")
+        if training_completed and not isinstance(source_session_dir, str):
+            raise SpecError(
+                "subject_training_state.json is corrupted: source_session_dir must be a string when training is completed."
+            )
+        return training_completed
+
+    def mark_subject_training_completed(self, subject_id: str, session_dir: Path) -> None:
+        payload = {
+            "subject_id": subject_id,
+            "training_completed": True,
+            "completed_at": timestamp_now(),
+            "source_session_dir": str(session_dir.resolve()),
+        }
+        atomic_write_json(self.subject_training_state_path(subject_id), payload)
+
     def mark_session_finished(self, bundle: SessionBundle) -> None:
         bundle.state.status = FINISHED
         bundle.state.current_screen = "completion"
@@ -240,7 +282,7 @@ class SessionStore:
         return [Phase2Result.from_dict(entry) for entry in payload]
 
     def _validate_bundle(self, bundle: SessionBundle) -> None:
-        if bundle.meta.app_spec_version != APP_SPEC_VERSION:
+        if bundle.meta.app_spec_version not in {APP_SPEC_VERSION, "1.1"}:
             raise SpecError(
                 f"Unsupported app_spec_version '{bundle.meta.app_spec_version}' in session_meta.json."
             )
@@ -268,8 +310,11 @@ class SessionStore:
             if (
                 trial.subject_id != bundle.meta.subject_id
                 or trial.device != bundle.meta.device
-                or trial.label_folder != bundle.meta.label_folder
-                or trial.recording_id != bundle.meta.recording_id
+                or trial.action_type != bundle.meta.action_type
+                or trial.country != bundle.meta.country
+                or trial.route_suffix != bundle.meta.route_suffix
+                or trial.occurrence != bundle.meta.occurrence
+                or trial.scene_folder_name != bundle.meta.scene_folder_name
             ):
                 raise SpecError("raw_trials.jsonl does not match session_meta.json.")
 
@@ -305,8 +350,6 @@ class SessionStore:
                 raise SpecError(
                     f"Phase 2 result for resolution '{result.resolution}' has no Phase 1 FOUND entry."
                 )
-            if result.status not in PHASE2_RESULT_STATUSES:
-                raise SpecError(f"Invalid Phase 2 result status '{result.status}'.")
             for candidate_result in result.candidate_results:
                 if candidate_result.status not in PHASE2_STATUSES:
                     raise SpecError(f"Invalid Phase 2 candidate status '{candidate_result.status}'.")
