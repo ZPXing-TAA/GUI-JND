@@ -1,0 +1,28 @@
+.DS_Store
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+
+# Codex local artifacts
+.codex_artifacts/
+
+# Project-generated communication and experiment outputs
+communication/
+Results/
+results/
+session_meta.json
+session_state.json
+raw_trials.jsonl
+phase1_result.json
+phase2_result.json
+candidate_power_prior_manifest.json
+final_jnd_safe_set.json
