@@ -13,6 +13,13 @@ class MainTests(unittest.TestCase):
 
         self.assertEqual(environ["QT_FFMPEG_DECODING_HW_DEVICE_TYPES"], ",")
 
+    def test_configure_runtime_environment_disables_hw_decode_on_windows(self) -> None:
+        environ: dict[str, str] = {}
+
+        configure_runtime_environment(environ, system_name="Windows")
+
+        self.assertEqual(environ["QT_FFMPEG_DECODING_HW_DEVICE_TYPES"], ",")
+
     def test_configure_runtime_environment_preserves_explicit_override(self) -> None:
         environ = {"QT_FFMPEG_DECODING_HW_DEVICE_TYPES": "videotoolbox"}
 

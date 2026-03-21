@@ -15,7 +15,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from jnd_gui.constants import BUTTON_NO_NOTICEABLE_DIFF, BUTTON_VISIBLE_DIFF, RESPONSE_DIFFERENT, RESPONSE_SAME
+from jnd_gui.constants import (
+    BUTTON_NO_NOTICEABLE_DIFF,
+    BUTTON_VISIBLE_DIFF,
+    INTER_CLIP_GAP_MS,
+    INTER_CLIP_WAIT_PROMPT,
+    RESPONSE_DIFFERENT,
+    RESPONSE_SAME,
+)
 from jnd_gui.trial_player import SequentialTrialPlayer
 
 
@@ -224,7 +231,8 @@ class TrialScreen(QWidget):
 
         self.stage_action_button = QPushButton("Start Trial")
         self.stage_action_button.clicked.connect(self._handle_stage_action)
-        self.stage_action_button.setMinimumHeight(44)
+        self.stage_action_button.setMinimumHeight(52)
+        self.stage_action_button.setStyleSheet("font-size: 16px; font-weight: 700; padding: 14px 18px;")
 
         header_box = QFrame()
         header_layout = QVBoxLayout(header_box)
@@ -237,10 +245,11 @@ class TrialScreen(QWidget):
         top_row.addLayout(text_column, stretch=1)
 
         response_column = QVBoxLayout()
-        response_row = QHBoxLayout()
-        response_row.addWidget(self.no_diff_button)
-        response_row.addWidget(self.visible_diff_button)
-        response_column.addLayout(response_row)
+        self._response_button_row = QHBoxLayout()
+        self._response_button_row.addWidget(self.no_diff_button)
+        self._response_button_row.addWidget(self.visible_diff_button)
+        response_column.addLayout(self._response_button_row)
+        response_column.addWidget(self.stage_action_button, alignment=Qt.AlignmentFlag.AlignRight)
         response_column.addStretch(1)
         top_row.addLayout(response_column)
 
@@ -253,7 +262,6 @@ class TrialScreen(QWidget):
         layout.setSpacing(16)
         layout.addWidget(header_box)
         layout.addWidget(self.player, stretch=1)
-        layout.addWidget(self.stage_action_button)
 
         self._response_timer = QElapsedTimer()
         self._between_clip_timer = QTimer(self)
@@ -261,6 +269,7 @@ class TrialScreen(QWidget):
         self._between_clip_timer.timeout.connect(self._play_clip_b_after_gap)
         self._response_enabled = False
         self._stage = "TRIAL_READY"
+        QTimer.singleShot(0, self._sync_stage_action_button_width)
 
     def start_trial(
         self,
@@ -300,7 +309,7 @@ class TrialScreen(QWidget):
     def _on_clip_finished(self, clip_label: str) -> None:
         if clip_label == "A":
             self._set_stage("INTER_CLIP_WAIT")
-            self._between_clip_timer.start(5000)
+            self._between_clip_timer.start(INTER_CLIP_GAP_MS)
             return
         if clip_label == "B":
             self._response_timer.start()
@@ -311,6 +320,14 @@ class TrialScreen(QWidget):
     def _set_response_buttons_enabled(self, enabled: bool) -> None:
         self.no_diff_button.setEnabled(enabled)
         self.visible_diff_button.setEnabled(enabled)
+
+    def _sync_stage_action_button_width(self) -> None:
+        button_row_width = (
+            self.no_diff_button.sizeHint().width()
+            + self.visible_diff_button.sizeHint().width()
+            + self._response_button_row.spacing()
+        )
+        self.stage_action_button.setFixedWidth(button_row_width)
 
     def _set_stage(self, stage: str) -> None:
         self._stage = stage
@@ -326,7 +343,7 @@ class TrialScreen(QWidget):
             return
         if stage == "INTER_CLIP_WAIT":
             self.stage_action_button.hide()
-            self.prompt_label.setText("Clip A finished. Clip B will start in 5 seconds.")
+            self.prompt_label.setText(INTER_CLIP_WAIT_PROMPT)
             return
         if stage == "PLAYING_B":
             self.stage_action_button.hide()

@@ -10,9 +10,9 @@ def configure_runtime_environment(
 ) -> None:
     environ = os.environ if environ is None else environ
     system_name = platform.system() if system_name is None else system_name
-    if system_name == "Darwin":
-        # Qt 6 FFmpeg on macOS may route H.264 through VideoToolbox, which is
-        # unstable for some scrcpy-generated recordings. Default to software
+    if system_name in {"Darwin", "Windows"}:
+        # Qt 6 FFmpeg hardware decode can stall on some H.264 recordings on
+        # macOS (VideoToolbox) and Windows (D3D11). Default to software
         # decoding unless the operator explicitly configured another policy.
         environ.setdefault("QT_FFMPEG_DECODING_HW_DEVICE_TYPES", ",")
 
