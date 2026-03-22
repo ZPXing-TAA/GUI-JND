@@ -1,7 +1,5 @@
 # JND Subjective Experiment GUI
 
-This implementation follows `jnd_ui_implementer_spec.md` as the only source of truth.
-
 ## Setup
 
 ```bash
