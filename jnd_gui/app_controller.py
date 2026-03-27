@@ -24,6 +24,7 @@ from jnd_gui.scheduler import (
 )
 from jnd_gui.screens import MessageScreen, ResumeScreen, StartScreen, TrialScreen
 from jnd_gui.session_store import SessionStore
+from jnd_gui.subjective_label_manifest import build_candidate_subjective_label_manifest
 from jnd_gui.utils import timestamp_now
 
 
@@ -570,6 +571,7 @@ class JNDExperimentWindow(QMainWindow):
 
     def _finalize_session(self) -> None:
         assert self._bundle is not None
+        candidate_power_prior_manifest = self.store.load_candidate_power_prior_manifest(self._bundle.session_dir)
         final_safe_set = build_final_safe_set(
             subject_id=self._bundle.meta.subject_id,
             device=self._bundle.meta.device,
@@ -581,12 +583,22 @@ class JNDExperimentWindow(QMainWindow):
             phase1_results=self._bundle.phase1_results,
             phase2_results=self._bundle.phase2_results,
         )
+        candidate_subjective_label_manifest = build_candidate_subjective_label_manifest(
+            meta=self._bundle.meta,
+            raw_trials=self._bundle.raw_trials,
+            candidate_power_prior_manifest=candidate_power_prior_manifest,
+        )
         self.store.write_final_safe_set(self._bundle.session_dir, final_safe_set)
+        self.store.write_candidate_subjective_label_manifest(
+            self._bundle.session_dir,
+            candidate_subjective_label_manifest,
+        )
         self.store.mark_session_finished(self._bundle)
         detail_lines = [
             f"Output directory: {self._bundle.session_dir}",
             f"Formal trials completed: {len(self._bundle.raw_trials)}",
             f"Final safe configs: {len(final_safe_set.jnd_safe_set)}",
+            f"Candidate label entries: {len(candidate_subjective_label_manifest['candidates'])}",
         ]
         if final_safe_set.estimated_lowest_power_safe_config is not None:
             detail_lines.append(

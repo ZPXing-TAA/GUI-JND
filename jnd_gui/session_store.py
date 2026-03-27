@@ -171,6 +171,16 @@ class SessionStore:
     def write_candidate_power_prior_manifest(self, session_dir: Path, manifest: dict[str, object]) -> None:
         atomic_write_json(self.candidate_power_prior_manifest_path(session_dir), manifest)
 
+    def load_candidate_power_prior_manifest(self, session_dir: Path) -> dict[str, object]:
+        path = self.candidate_power_prior_manifest_path(session_dir)
+        payload = read_json_file(path)
+        if not isinstance(payload, dict):
+            raise SpecError("candidate_power_prior_manifest.json is corrupted: expected a JSON object.")
+        return payload
+
+    def write_candidate_subjective_label_manifest(self, session_dir: Path, manifest: dict[str, object]) -> None:
+        atomic_write_json(self.candidate_subjective_label_manifest_path(session_dir), manifest)
+
     def has_subject_completed_training(self, subject_id: str) -> bool:
         path = self.subject_training_state_path(subject_id)
         if not path.exists():
@@ -243,6 +253,10 @@ class SessionStore:
     @staticmethod
     def candidate_power_prior_manifest_path(session_dir: Path) -> Path:
         return session_dir / "candidate_power_prior_manifest.json"
+
+    @staticmethod
+    def candidate_subjective_label_manifest_path(session_dir: Path) -> Path:
+        return session_dir / "candidate_subjective_label_manifest.json"
 
     def _load_raw_trials(self, session_dir: Path) -> list[TrialRecord]:
         path = self.raw_trials_path(session_dir)
